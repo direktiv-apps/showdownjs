@@ -1,0 +1,165 @@
+swagger: "2.0"
+info:
+  description: Convert github markdown files to HTML.
+  title: showdownjs
+  version: 1.0.0
+  x-direktiv-meta:
+    container: direktiv/showdownjs
+    maintainer: |-
+      [direktiv.io](https://www.direktiv.io)
+    issues: https://github.com/direktiv-apps/showdownjs/issues
+    url: https://github.com/direktiv-apps/showdownjs  
+    category: Unknown
+    license: |-
+      [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)
+    long-description: |-
+      Showdownjs is a library for coverting markdown into HTML. It can not only convert basic markdown but understands Github's 
+      markdown extensions. This function takes a file 'input.md' and returns it as HTML as base64 in the response. 
+      Additionally it can store the result in Direktiv variables. 
+consumes:
+- application/json
+produces:
+- application/json
+schemes:
+- http
+paths:
+  /: 
+    delete:
+      parameters:
+        - name: Direktiv-ActionID
+          in: header
+          type: string
+          description: |
+            On cancel Direktiv sends a DELETE request to
+            the action with id in the header
+      x-direktiv:
+        cancel: echo 'cancel {{ .DirektivActionID }}'
+      responses:
+        200:
+    post:
+      parameters:
+        - name: Direktiv-ActionID
+          in: header
+          type: string
+          description: |
+            direktiv action id is an UUID. 
+            For development it can be set to 'development'
+        - name: Direktiv-TempDir
+          in: header
+          type: string
+          description: |
+            direktiv temp dir is the working directory for that request
+            For development it can be set to e.g. '/tmp'
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              scope:
+                type: string
+                example: instance
+                description: Scope of the saved html output.
+                enum: ["workflow", "namespace", "instance"]
+              name:
+                type: string
+                example: myhtml
+                description: Scope of the saved html output within the scope.
+      x-direktiv-function: |-
+        functions:
+          - id: showdownjs
+            image: direktiv/showdownjs
+            type: knative-workflow
+      x-direktiv-examples:
+        - title: Basic
+          content: |-
+            - id: showdownjs
+                 type: action
+                  action:
+                    files:
+                    - key: readme.md
+                      scope: workflow
+                      as: input.md
+                    function: get
+                    input:
+                      # saves the result in workflow variable 'final.html'
+                      scope: workflow
+                      name: final.html
+      x-direktiv:  
+        debug: true
+        cmds:
+        - action: exec
+          exec: |-
+            {{- $v := "out.md" }}
+            {{- if and (not (empty .Scope)) (not (empty .Name)) }}
+              {{- $v = (list "out" .Scope .Name | join "/") }}
+            {{- end }}
+            showdown makehtml --input input.md --output {{ $v }} \
+              -c strikethrough \
+              -c omitExtraWLInCodeBlocks \
+              -c simplifiedAutoLink \
+              -c literalMidWordUnderscores \
+              -c tables \
+              -c tablesHeaderId \
+              -c ghCodeBlocks \
+              -c tasklists \
+              -c disableForced4SpacesIndentedSublists \
+              -c simpleLineBreaks \
+              -c requireSpaceBeforeHeadingText \
+              -c ghCompatibleHeaderId \
+              -c ghMentions \
+              -c backslashEscapesHTMLTags \
+              -c emoji \
+              -c splitAdjacentBlockquotes 
+        - action: exec
+          exec: |-
+            {{- $v := "out.md" }}
+            {{- if and (not (empty .Scope)) (not (empty .Name)) }}
+              {{- $v = (list "out" .Scope .Name | join "/") }}
+            {{- end }}
+            base64 -w0 {{ $v }}
+          silent: true
+        output: |
+          {
+            "html": "{{ index (index . 1) "result" }}"
+          }
+      x-direktiv-errors:
+        io.direktiv.command.error: Command execution failed
+        io.direktiv.output.error: Template error for output generation of the service
+        io.direktiv.ri.error: Can not create information object from request
+      responses:
+        200:
+          description: Returns base64 encoded HTML of the provided markdown file.
+          schema:
+            type: object
+            properties:
+              html:
+                type: string
+                description: Base64 encoded HTML
+            example: 
+              html: OiBkaXJla3Rpdi9hd3...3d3LmFwYWNoZS5vcmcvbG
+        default:
+          description: generic error response
+          headers:
+            Direktiv-ErrorCode:
+              type: string
+            Direktiv-ErrorMessage:
+              type: string
+          schema:
+            $ref: "#/definitions/error"
+definitions:
+  direktivFile:
+    type: object
+    x-go-type:
+      type: DirektivFile
+      import:
+        package: github.com/direktiv/apps/go/pkg/apps 
+  error:
+    type: object
+    required:
+      - errorCode
+      - errorMessage
+    properties:
+      errorCode:
+        type: string
+      errorMessage:
+        type: string
